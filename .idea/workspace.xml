@@ -4,24 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="6874b32c-f8bb-4932-9fa9-dd47ba09e6e3" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/maintenix/.gitattributes" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/.mvn/wrapper/maven-wrapper.properties" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/mvnw" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/mvnw.cmd" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/pom.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/src/main/java/com/ammar/maintenix/MaintenixApplication.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/src/main/resources/application.properties" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/maintenix/src/test/java/com/ammar/maintenix/MaintenixApplicationTests.java" beforeDir="false" />
-    </list>
+    <list default="true" id="6874b32c-f8bb-4932-9fa9-dd47ba09e6e3" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/maintenix" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 4
@@ -34,9 +24,9 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "master",
+    "git-widget-placeholder": "main",
     "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "C:/Users/amar/Desktop/Projekt/maintenix/backend",
+    "last_opened_file_path": "C:/Users/amar/Desktop/Projekt/maintenix",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -83,6 +73,7 @@
       <updated>1784058917515</updated>
       <workItem from="1784058918247" duration="1056000" />
       <workItem from="1784060349347" duration="26000" />
+      <workItem from="1784060537737" duration="16000" />
     </task>
     <servers />
   </component>
