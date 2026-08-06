@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: maintenix
 
     ports:
-      - "5432:5432"
+      - "15433:5432"
 
     volumes:
       - maintenix-postgres-data:/var/lib/postgresql/data
