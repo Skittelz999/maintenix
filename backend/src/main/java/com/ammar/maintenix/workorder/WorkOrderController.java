@@ -8,6 +8,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.GetMapping;
+import java.util.List;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/work-orders")
@@ -24,5 +29,18 @@ public class WorkOrderController {
         WorkOrderResponse response =
                 workOrderService.createWorkOrder(request);
         return ResponseEntity.status(201).body(response);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<WorkOrderResponse>> getAllWorkOrders() {
+        List<WorkOrderResponse> responses = workOrderService.getAllWorkOrders();
+        return ResponseEntity.status(200).body(responses);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<WorkOrderResponse> getWorkOrderById( @PathVariable UUID id)
+    {
+        WorkOrderResponse response = workOrderService.getWorkOrderById(id);
+        return ResponseEntity.status(200).body(response);
     }
 }

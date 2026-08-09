@@ -12,7 +12,9 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import java.util.List;
+import java.util.ArrayList;
+import java.util.UUID;
 @Service
 public class WorkOrderService {
 
@@ -83,4 +85,62 @@ public class WorkOrderService {
 
         return response;
     }
+
+    @Transactional
+    public List<WorkOrderResponse> getAllWorkOrders() {
+        List<WorkOrder> workOrders = workOrderRepository.findAll();
+        List<WorkOrderResponse> responses = new ArrayList<>();
+
+        for (WorkOrder workOrder : workOrders) {
+            WorkOrderResponse response = new WorkOrderResponse(
+                    workOrder.getId(),
+                    workOrder.getProperty().getId(),
+                    workOrder.getProperty().getName(),
+                    workOrder.getCreatedBy().getId(),
+                    workOrder.getCreatedBy().getFirstName()
+                            + " "
+                            + workOrder.getCreatedBy().getLastName(),
+                    workOrder.getAssignedTo() == null
+                            ? null
+                            : workOrder.getAssignedTo().getId(),
+                    workOrder.getTitle(),
+                    workOrder.getDescription(),
+                    workOrder.getStatus(),
+                    workOrder.getPriority(),
+                    workOrder.getCreatedAt(),
+                    workOrder.getUpdatedAt()
+            );
+            responses.add(response);
+        }
+        return responses;
+    }
+    @Transactional
+    public WorkOrderResponse getWorkOrderById(UUID id) {
+
+        WorkOrder workOrder = workOrderRepository
+                .findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Work order not found with id: " + id));
+
+        WorkOrderResponse response = new WorkOrderResponse(
+                workOrder.getId(),
+                workOrder.getProperty().getId(),
+                workOrder.getProperty().getName(),
+                workOrder.getCreatedBy().getId(),
+                workOrder.getCreatedBy().getFirstName()
+                        + " "
+                        + workOrder.getCreatedBy().getLastName(),
+                workOrder.getAssignedTo() == null
+                        ? null
+                        : workOrder.getAssignedTo().getId(),
+                workOrder.getTitle(),
+                workOrder.getDescription(),
+                workOrder.getStatus(),
+                workOrder.getPriority(),
+                workOrder.getCreatedAt(),
+                workOrder.getUpdatedAt()
+        );
+        return response;
+
+    }
+
 }
