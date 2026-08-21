@@ -6,15 +6,19 @@ import com.ammar.maintenix.property.PropertyRepository;
 import com.ammar.maintenix.user.User;
 import com.ammar.maintenix.user.UserRepository;
 import com.ammar.maintenix.user.UserRole;
+import com.ammar.maintenix.workorder.dto.AssignTechnicianRequest;
 import com.ammar.maintenix.workorder.dto.CreateWorkOrderRequest;
+import com.ammar.maintenix.workorder.dto.UpdateWorkOrderStatusRequest;
 import com.ammar.maintenix.workorder.dto.WorkOrderResponse;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
+
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+
 @Service
 public class WorkOrderService {
 
@@ -37,20 +41,28 @@ public class WorkOrderService {
 
     @Transactional
     public WorkOrderResponse createWorkOrder(CreateWorkOrderRequest request) {
+
         Property property = propertyRepository
                 .findById(request.getPropertyId())
-                .orElseThrow(() -> new EntityNotFoundException("Property not found"));
+                .orElseThrow(() ->
+                        new EntityNotFoundException("Property not found"));
 
         User user = userRepository
                 .findById(request.getCreatedByUserId())
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+                .orElseThrow(() ->
+                        new EntityNotFoundException("User not found"));
 
         if (user.getRole() == UserRole.TENANT
-                && !propertyMemberRepository.existsByPropertyIdAndUserId(property.getId(), user.getId())) {
-            throw new AccessDeniedException("Tenant is not a member of the property");
+                && !propertyMemberRepository.existsByPropertyIdAndUserId(
+                property.getId(),
+                user.getId())) {
+
+            throw new AccessDeniedException(
+                    "Tenant is not a member of the property");
         }
 
         WorkOrderPriority priority = request.getPriority();
+
         if (priority == null) {
             priority = WorkOrderPriority.MEDIUM;
         }
@@ -61,67 +73,99 @@ public class WorkOrderService {
                 request.getTitle(),
                 request.getDescription()
         );
+
         workOrder.setPriority(priority);
 
-        WorkOrder savedWorkOrder = workOrderRepository.save(workOrder);
-        WorkOrderResponse response = new WorkOrderResponse(
-                savedWorkOrder.getId(),
-                savedWorkOrder.getProperty().getId(),
-                savedWorkOrder.getProperty().getName(),
-                savedWorkOrder.getCreatedBy().getId(),
-                savedWorkOrder.getCreatedBy().getFirstName()
-                        + " "
-                        + savedWorkOrder.getCreatedBy().getLastName(),
-                savedWorkOrder.getAssignedTo() == null
-                        ? null
-                        : savedWorkOrder.getAssignedTo().getId(),
-                savedWorkOrder.getTitle(),
-                savedWorkOrder.getDescription(),
-                savedWorkOrder.getStatus(),
-                savedWorkOrder.getPriority(),
-                savedWorkOrder.getCreatedAt(),
-                savedWorkOrder.getUpdatedAt()
-        );
+        WorkOrder savedWorkOrder =
+                workOrderRepository.save(workOrder);
 
-        return response;
+        return mapToResponse(savedWorkOrder);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public List<WorkOrderResponse> getAllWorkOrders() {
-        List<WorkOrder> workOrders = workOrderRepository.findAll();
-        List<WorkOrderResponse> responses = new ArrayList<>();
+
+        List<WorkOrder> workOrders =
+                workOrderRepository.findAll();
+
+        List<WorkOrderResponse> responses =
+                new ArrayList<>();
 
         for (WorkOrder workOrder : workOrders) {
-            WorkOrderResponse response = new WorkOrderResponse(
-                    workOrder.getId(),
-                    workOrder.getProperty().getId(),
-                    workOrder.getProperty().getName(),
-                    workOrder.getCreatedBy().getId(),
-                    workOrder.getCreatedBy().getFirstName()
-                            + " "
-                            + workOrder.getCreatedBy().getLastName(),
-                    workOrder.getAssignedTo() == null
-                            ? null
-                            : workOrder.getAssignedTo().getId(),
-                    workOrder.getTitle(),
-                    workOrder.getDescription(),
-                    workOrder.getStatus(),
-                    workOrder.getPriority(),
-                    workOrder.getCreatedAt(),
-                    workOrder.getUpdatedAt()
-            );
-            responses.add(response);
+            responses.add(mapToResponse(workOrder));
         }
+
         return responses;
     }
-    @Transactional
+
+    @Transactional(readOnly = true)
     public WorkOrderResponse getWorkOrderById(UUID id) {
 
         WorkOrder workOrder = workOrderRepository
                 .findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Work order not found with id: " + id));
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Work order not found with id: " + id));
 
-        WorkOrderResponse response = new WorkOrderResponse(
+        return mapToResponse(workOrder);
+    }
+
+    @Transactional
+    public WorkOrderResponse updateStatus(
+            UUID id,
+            UpdateWorkOrderStatusRequest request) {
+
+        WorkOrder workOrder = workOrderRepository
+                .findById(id)
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Work order not found with id: " + id));
+
+        WorkOrderStatus status = request.getStatus();
+
+        workOrder.setStatus(status);
+
+        WorkOrder savedWorkOrder =
+                workOrderRepository.save(workOrder);
+
+        return mapToResponse(savedWorkOrder);
+    }
+
+    @Transactional
+    public WorkOrderResponse assignTechnician(
+            UUID workOrderId,
+            AssignTechnicianRequest request) {
+
+        WorkOrder workOrder = workOrderRepository
+                .findById(workOrderId)
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Work order not found with id: "
+                                        + workOrderId));
+
+        User user = userRepository
+                .findById(request.getTechnicianId())
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "User not found with id: "
+                                        + request.getTechnicianId()));
+
+        if (user.getRole() != UserRole.TECHNICIAN) {
+            throw new IllegalArgumentException(
+                    "User is not a technician");
+        }
+
+        workOrder.setAssignedTo(user);
+
+        WorkOrder savedWorkOrder =
+                workOrderRepository.save(workOrder);
+
+        return mapToResponse(savedWorkOrder);
+    }
+
+    private WorkOrderResponse mapToResponse(WorkOrder workOrder) {
+
+        return new WorkOrderResponse(
                 workOrder.getId(),
                 workOrder.getProperty().getId(),
                 workOrder.getProperty().getName(),
@@ -139,8 +183,5 @@ public class WorkOrderService {
                 workOrder.getCreatedAt(),
                 workOrder.getUpdatedAt()
         );
-        return response;
-
     }
-
 }
