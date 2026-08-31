@@ -59,9 +59,11 @@ public class WorkOrderController {
     @PatchMapping("/{id}/status")
     public ResponseEntity<WorkOrderResponse> updateStatus(
             @PathVariable UUID id,
-            @Valid @RequestBody UpdateWorkOrderStatusRequest request
+            @Valid @RequestBody UpdateWorkOrderStatusRequest request,
+            Authentication authentication
     ) {
-        return ResponseEntity.ok(workOrderService.updateStatus(id, request));
+        return ResponseEntity.ok(workOrderService.updateStatus(
+                id, request, authentication.getName()));
     }
 
     @PatchMapping("/{id}/assign")

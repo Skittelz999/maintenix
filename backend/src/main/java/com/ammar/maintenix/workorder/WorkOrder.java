@@ -126,8 +126,12 @@ public class WorkOrder {
         return status;
     }
 
-    public void setStatus(WorkOrderStatus status) {
-        this.status = status;
+    public void transitionTo(WorkOrderStatus targetStatus) {
+        if (!status.canTransitionTo(targetStatus)) {
+            throw new InvalidWorkOrderStatusTransitionException(
+                    status, targetStatus);
+        }
+        status = targetStatus;
     }
 
     public WorkOrderPriority getPriority() {

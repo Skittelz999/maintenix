@@ -143,7 +143,8 @@ public class WorkOrderService {
     @PreAuthorize("hasAnyRole('TECHNICIAN', 'ADMIN')")
     public WorkOrderResponse updateStatus(
             UUID id,
-            UpdateWorkOrderStatusRequest request) {
+            UpdateWorkOrderStatusRequest request,
+            String currentUserEmail) {
 
         WorkOrder workOrder = workOrderRepository
                 .findById(id)
@@ -151,9 +152,17 @@ public class WorkOrderService {
                         new EntityNotFoundException(
                                 "Work order not found with id: " + id));
 
-        WorkOrderStatus status = request.getStatus();
+        User currentUser = getCurrentUser(currentUserEmail);
 
-        workOrder.setStatus(status);
+        if (currentUser.getRole() == UserRole.TECHNICIAN
+                && (workOrder.getAssignedTo() == null
+                || !workOrder.getAssignedTo().getId()
+                .equals(currentUser.getId()))) {
+            throw new AccessDeniedException(
+                    "Technician is not assigned to this work order");
+        }
+
+        workOrder.transitionTo(request.getStatus());
 
         WorkOrder savedWorkOrder =
                 workOrderRepository.save(workOrder);
@@ -186,6 +195,9 @@ public class WorkOrderService {
                     "User is not a technician");
         }
 
+        if (workOrder.getStatus() == WorkOrderStatus.NEW) {
+            workOrder.transitionTo(WorkOrderStatus.ASSIGNED);
+        }
         workOrder.setAssignedTo(user);
 
         WorkOrder savedWorkOrder =

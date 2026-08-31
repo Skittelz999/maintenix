@@ -9,8 +9,12 @@ import com.ammar.maintenix.user.UserRepository;
 import com.ammar.maintenix.user.UserRole;
 import com.ammar.maintenix.workorder.WorkOrder;
 import com.ammar.maintenix.workorder.WorkOrderRepository;
+import com.ammar.maintenix.workorder.WorkOrderStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -29,6 +33,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -212,7 +217,13 @@ class AuthenticationAndAuthorizationIntegrationTests {
                         .content(json(Map.of("technicianId", technician.getId()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignedToUserId")
-                        .value(technician.getId().toString()));
+                        .value(technician.getId().toString()))
+                .andExpect(jsonPath("$.status").value("ASSIGNED"));
+
+        WorkOrder saved = workOrderRepository.findById(workOrder.getId())
+                .orElseThrow();
+        assertThat(saved.getAssignedTo().getId()).isEqualTo(technician.getId());
+        assertThat(saved.getStatus()).isEqualTo(WorkOrderStatus.ASSIGNED);
     }
 
     @Test
@@ -369,6 +380,156 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 .andExpect(jsonPath("$.error").value("Not Found"));
     }
 
+    @ParameterizedTest(name = "{0} -> {1} is allowed")
+    @MethodSource("validStatusTransitions")
+    void adminCanPerformValidStatusTransitions(
+            WorkOrderStatus currentStatus,
+            WorkOrderStatus targetStatus
+    ) throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                otherTechnician,
+                "Valid transition",
+                currentStatus
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(targetStatus)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(targetStatus.name()));
+
+        assertThat(workOrderRepository.findById(workOrder.getId()).orElseThrow()
+                .getStatus()).isEqualTo(targetStatus);
+    }
+
+    @ParameterizedTest(name = "{0} -> {1} is rejected")
+    @MethodSource("invalidStatusTransitions")
+    void invalidStatusTransitionReturnsBadRequestAndIsNotPersisted(
+            WorkOrderStatus currentStatus,
+            WorkOrderStatus targetStatus
+    ) throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                otherTechnician,
+                "Invalid transition",
+                currentStatus
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(targetStatus)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value(
+                        "Invalid work order status transition: "
+                                + currentStatus + " -> " + targetStatus));
+
+        assertThat(workOrderRepository.findById(workOrder.getId()).orElseThrow()
+                .getStatus()).isEqualTo(currentStatus);
+    }
+
+    @Test
+    void technicianCanUpdateStatusOfOwnAssignedWorkOrder() throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                technician,
+                "Own status update",
+                WorkOrderStatus.ASSIGNED
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                technician.getEmail(), TECHNICIAN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(WorkOrderStatus.IN_PROGRESS)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+    }
+
+    @Test
+    void technicianCannotUpdateStatusAssignedToAnotherTechnician()
+            throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                otherTechnician,
+                "Other technician status update",
+                WorkOrderStatus.ASSIGNED
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                technician.getEmail(), TECHNICIAN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(WorkOrderStatus.IN_PROGRESS)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+
+        assertThat(workOrderRepository.findById(workOrder.getId()).orElseThrow()
+                .getStatus()).isEqualTo(WorkOrderStatus.ASSIGNED);
+    }
+
+    @Test
+    void technicianCannotUpdateStatusOfUnassignedWorkOrder() throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                null,
+                "Unassigned status update",
+                WorkOrderStatus.ASSIGNED
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                technician.getEmail(), TECHNICIAN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(WorkOrderStatus.IN_PROGRESS)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+
+        assertThat(workOrderRepository.findById(workOrder.getId()).orElseThrow()
+                .getStatus()).isEqualTo(WorkOrderStatus.ASSIGNED);
+    }
+
+    @Test
+    void tenantCannotUpdateWorkOrderStatus() throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                technician,
+                "Tenant status update",
+                WorkOrderStatus.ASSIGNED
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                tenant.getEmail(), TENANT_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(WorkOrderStatus.IN_PROGRESS)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void adminCanUpdateStatusAssignedToAnotherTechnician() throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                otherTechnician,
+                "Admin status update",
+                WorkOrderStatus.ASSIGNED
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(WorkOrderStatus.IN_PROGRESS)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+    }
+
     private String login(String email, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -392,6 +553,69 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 property, tenant, title, "Test description");
         workOrder.setAssignedTo(assignedTo);
         return workOrderRepository.save(workOrder);
+    }
+
+    private WorkOrder saveWorkOrderWithStatus(
+            Property property,
+            User assignedTo,
+            String title,
+            WorkOrderStatus status
+    ) {
+        WorkOrder workOrder = new WorkOrder(
+                property, tenant, title, "Test description");
+        workOrder.setAssignedTo(assignedTo);
+        advanceToStatus(workOrder, status);
+        return workOrderRepository.save(workOrder);
+    }
+
+    private void advanceToStatus(
+            WorkOrder workOrder,
+            WorkOrderStatus status
+    ) {
+        switch (status) {
+            case NEW -> {
+            }
+            case ASSIGNED -> workOrder.transitionTo(WorkOrderStatus.ASSIGNED);
+            case IN_PROGRESS -> {
+                workOrder.transitionTo(WorkOrderStatus.ASSIGNED);
+                workOrder.transitionTo(WorkOrderStatus.IN_PROGRESS);
+            }
+            case ON_HOLD -> {
+                workOrder.transitionTo(WorkOrderStatus.ASSIGNED);
+                workOrder.transitionTo(WorkOrderStatus.IN_PROGRESS);
+                workOrder.transitionTo(WorkOrderStatus.ON_HOLD);
+            }
+            case COMPLETED -> {
+                workOrder.transitionTo(WorkOrderStatus.ASSIGNED);
+                workOrder.transitionTo(WorkOrderStatus.IN_PROGRESS);
+                workOrder.transitionTo(WorkOrderStatus.COMPLETED);
+            }
+            case CANCELLED -> workOrder.transitionTo(WorkOrderStatus.CANCELLED);
+        }
+    }
+
+    private static Stream<Arguments> validStatusTransitions() {
+        return Stream.of(
+                Arguments.of(WorkOrderStatus.ASSIGNED, WorkOrderStatus.IN_PROGRESS),
+                Arguments.of(WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.ON_HOLD),
+                Arguments.of(WorkOrderStatus.ON_HOLD, WorkOrderStatus.IN_PROGRESS),
+                Arguments.of(WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.COMPLETED),
+                Arguments.of(WorkOrderStatus.NEW, WorkOrderStatus.CANCELLED)
+        );
+    }
+
+    private static Stream<Arguments> invalidStatusTransitions() {
+        return Stream.of(
+                Arguments.of(WorkOrderStatus.NEW, WorkOrderStatus.COMPLETED),
+                Arguments.of(WorkOrderStatus.ASSIGNED, WorkOrderStatus.COMPLETED),
+                Arguments.of(WorkOrderStatus.COMPLETED, WorkOrderStatus.IN_PROGRESS),
+                Arguments.of(WorkOrderStatus.CANCELLED, WorkOrderStatus.IN_PROGRESS),
+                Arguments.of(WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.IN_PROGRESS)
+        );
+    }
+
+    private String statusUpdateJson(WorkOrderStatus status) throws Exception {
+        return json(Map.of("status", status.name()));
     }
 
     private Set<String> responseIds(MvcResult result) throws Exception {
