@@ -12,9 +12,6 @@ public class CreateWorkOrderRequest {
     @NotNull
     private UUID propertyId;
 
-    @NotNull
-    private UUID createdByUserId;
-
     @NotBlank
     @Size(max = 200)
     private String title;
@@ -29,13 +26,11 @@ public class CreateWorkOrderRequest {
 
     public CreateWorkOrderRequest(
             UUID propertyId,
-            UUID createdByUserId,
             String title,
             String description,
             WorkOrderPriority priority
     ) {
         this.propertyId = propertyId;
-        this.createdByUserId = createdByUserId;
         this.title = title;
         this.description = description;
         this.priority = priority;
@@ -47,14 +42,6 @@ public class CreateWorkOrderRequest {
 
     public void setPropertyId(UUID propertyId) {
         this.propertyId = propertyId;
-    }
-
-    public UUID getCreatedByUserId() {
-        return createdByUserId;
-    }
-
-    public void setCreatedByUserId(UUID createdByUserId) {
-        this.createdByUserId = createdByUserId;
     }
 
     public String getTitle() {

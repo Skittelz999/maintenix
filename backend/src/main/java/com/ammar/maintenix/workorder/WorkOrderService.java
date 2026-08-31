@@ -12,6 +12,7 @@ import com.ammar.maintenix.workorder.dto.UpdateWorkOrderStatusRequest;
 import com.ammar.maintenix.workorder.dto.WorkOrderResponse;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,17 +41,18 @@ public class WorkOrderService {
     }
 
     @Transactional
-    public WorkOrderResponse createWorkOrder(CreateWorkOrderRequest request) {
+    @PreAuthorize("hasAnyRole('TENANT', 'ADMIN')")
+    public WorkOrderResponse createWorkOrder(
+            CreateWorkOrderRequest request,
+            String currentUserEmail
+    ) {
 
         Property property = propertyRepository
                 .findById(request.getPropertyId())
                 .orElseThrow(() ->
                         new EntityNotFoundException("Property not found"));
 
-        User user = userRepository
-                .findById(request.getCreatedByUserId())
-                .orElseThrow(() ->
-                        new EntityNotFoundException("User not found"));
+        User user = getCurrentUser(currentUserEmail);
 
         if (user.getRole() == UserRole.TENANT
                 && !propertyMemberRepository.existsByPropertyIdAndUserId(
@@ -84,9 +86,7 @@ public class WorkOrderService {
 
     @Transactional(readOnly = true)
     public List<WorkOrderResponse> getAllWorkOrders() {
-
-        List<WorkOrder> workOrders =
-                workOrderRepository.findAll();
+        List<WorkOrder> workOrders = workOrderRepository.findAll();
 
         List<WorkOrderResponse> responses =
                 new ArrayList<>();
@@ -111,6 +111,7 @@ public class WorkOrderService {
     }
 
     @Transactional
+    @PreAuthorize("hasAnyRole('TECHNICIAN', 'ADMIN')")
     public WorkOrderResponse updateStatus(
             UUID id,
             UpdateWorkOrderStatusRequest request) {
@@ -132,6 +133,7 @@ public class WorkOrderService {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public WorkOrderResponse assignTechnician(
             UUID workOrderId,
             AssignTechnicianRequest request) {
@@ -183,5 +185,17 @@ public class WorkOrderService {
                 workOrder.getCreatedAt(),
                 workOrder.getUpdatedAt()
         );
+    }
+
+    private User getCurrentUser(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new AccessDeniedException("Authenticated user not found"));
+
+        if (!user.isActive()) {
+            throw new AccessDeniedException("User account is inactive");
+        }
+
+        return user;
     }
 }

@@ -1,20 +1,23 @@
 package com.ammar.maintenix.workorder;
 
+import com.ammar.maintenix.workorder.dto.AssignTechnicianRequest;
 import com.ammar.maintenix.workorder.dto.CreateWorkOrderRequest;
+import com.ammar.maintenix.workorder.dto.UpdateWorkOrderStatusRequest;
 import com.ammar.maintenix.workorder.dto.WorkOrderResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.GetMapping;
+
 import java.util.List;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import java.util.UUID;
-import org.springframework.web.bind.annotation.PatchMapping;
-import com.ammar.maintenix.workorder.dto.UpdateWorkOrderStatusRequest;
 
 @RestController
 @RequestMapping("/api/work-orders")
@@ -27,29 +30,40 @@ public class WorkOrderController {
     }
 
     @PostMapping
-    public ResponseEntity<WorkOrderResponse> createWorkOrder(@Valid @RequestBody CreateWorkOrderRequest request) {
-        WorkOrderResponse response =
-                workOrderService.createWorkOrder(request);
-        return ResponseEntity.status(201).body(response);
+    public ResponseEntity<WorkOrderResponse> createWorkOrder(
+            @Valid @RequestBody CreateWorkOrderRequest request,
+            Authentication authentication
+    ) {
+        WorkOrderResponse response = workOrderService.createWorkOrder(
+                request, authentication.getName());
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping
     public ResponseEntity<List<WorkOrderResponse>> getAllWorkOrders() {
-        List<WorkOrderResponse> responses = workOrderService.getAllWorkOrders();
-        return ResponseEntity.status(200).body(responses);
+        return ResponseEntity.ok(workOrderService.getAllWorkOrders());
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<WorkOrderResponse> getWorkOrderById( @PathVariable UUID id)
-    {
-        WorkOrderResponse response = workOrderService.getWorkOrderById(id);
-        return ResponseEntity.status(200).body(response);
+    public ResponseEntity<WorkOrderResponse> getWorkOrderById(
+            @PathVariable UUID id
+    ) {
+        return ResponseEntity.ok(workOrderService.getWorkOrderById(id));
     }
 
     @PatchMapping("/{id}/status")
-    public ResponseEntity<WorkOrderResponse> updateStatus(@PathVariable UUID id, @Valid @RequestBody UpdateWorkOrderStatusRequest request)
-    {
-        WorkOrderResponse response = workOrderService.updateStatus(id,request);
-        return ResponseEntity.status(200).body(response);
+    public ResponseEntity<WorkOrderResponse> updateStatus(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateWorkOrderStatusRequest request
+    ) {
+        return ResponseEntity.ok(workOrderService.updateStatus(id, request));
+    }
+
+    @PatchMapping("/{id}/assign")
+    public ResponseEntity<WorkOrderResponse> assignTechnician(
+            @PathVariable UUID id,
+            @Valid @RequestBody AssignTechnicianRequest request
+    ) {
+        return ResponseEntity.ok(workOrderService.assignTechnician(id, request));
     }
 }
