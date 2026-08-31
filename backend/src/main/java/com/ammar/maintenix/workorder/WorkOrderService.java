@@ -85,8 +85,16 @@ public class WorkOrderService {
     }
 
     @Transactional(readOnly = true)
-    public List<WorkOrderResponse> getAllWorkOrders() {
-        List<WorkOrder> workOrders = workOrderRepository.findAll();
+    public List<WorkOrderResponse> getVisibleWorkOrders(String currentUserEmail) {
+        User currentUser = getCurrentUser(currentUserEmail);
+
+        List<WorkOrder> workOrders = switch (currentUser.getRole()) {
+            case ADMIN -> workOrderRepository.findAllWithDetails();
+            case TENANT -> workOrderRepository.findAllVisibleToTenant(
+                    currentUser.getId());
+            case TECHNICIAN -> workOrderRepository.findByAssignedToId(
+                    currentUser.getId());
+        };
 
         List<WorkOrderResponse> responses =
                 new ArrayList<>();
@@ -99,13 +107,34 @@ public class WorkOrderService {
     }
 
     @Transactional(readOnly = true)
-    public WorkOrderResponse getWorkOrderById(UUID id) {
+    public WorkOrderResponse getVisibleWorkOrderById(
+            UUID id,
+            String currentUserEmail
+    ) {
 
         WorkOrder workOrder = workOrderRepository
                 .findById(id)
                 .orElseThrow(() ->
                         new EntityNotFoundException(
                                 "Work order not found with id: " + id));
+
+        User currentUser = getCurrentUser(currentUserEmail);
+
+        boolean hasAccess = switch (currentUser.getRole()) {
+            case ADMIN -> true;
+            case TENANT -> propertyMemberRepository
+                    .existsByPropertyIdAndUserId(
+                            workOrder.getProperty().getId(),
+                            currentUser.getId());
+            case TECHNICIAN -> workOrder.getAssignedTo() != null
+                    && workOrder.getAssignedTo().getId()
+                    .equals(currentUser.getId());
+        };
+
+        if (!hasAccess) {
+            throw new AccessDeniedException(
+                    "You do not have access to this work order");
+        }
 
         return mapToResponse(workOrder);
     }

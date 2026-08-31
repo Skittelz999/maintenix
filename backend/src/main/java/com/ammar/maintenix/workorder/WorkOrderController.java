@@ -40,15 +40,20 @@ public class WorkOrderController {
     }
 
     @GetMapping
-    public ResponseEntity<List<WorkOrderResponse>> getAllWorkOrders() {
-        return ResponseEntity.ok(workOrderService.getAllWorkOrders());
+    public ResponseEntity<List<WorkOrderResponse>> getAllWorkOrders(
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(workOrderService.getVisibleWorkOrders(
+                authentication.getName()));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<WorkOrderResponse> getWorkOrderById(
-            @PathVariable UUID id
+            @PathVariable UUID id,
+            Authentication authentication
     ) {
-        return ResponseEntity.ok(workOrderService.getWorkOrderById(id));
+        return ResponseEntity.ok(workOrderService.getVisibleWorkOrderById(
+                id, authentication.getName()));
     }
 
     @PatchMapping("/{id}/status")
