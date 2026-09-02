@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -530,6 +531,197 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
     }
 
+    @ParameterizedTest
+    @EnumSource(UserRole.class)
+    void adminCanCreateUsersWithEachRole(UserRole role) throws Exception {
+        String email = role.name().toLowerCase() + ".created@example.com";
+
+        MvcResult result = mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "  " + email.toUpperCase() + "  ",
+                                "created-password",
+                                "  Created  ",
+                                "  User  ",
+                                role.name()
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.email").value(email))
+                .andExpect(jsonPath("$.firstName").value("Created"))
+                .andExpect(jsonPath("$.lastName").value("User"))
+                .andExpect(jsonPath("$.role").value(role.name()))
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(
+                result.getResponse().getContentAsString());
+        assertThat(result.getResponse().getHeader("Location"))
+                .isEqualTo("/api/users/" + response.get("id").asText());
+    }
+
+    @Test
+    void createdUserPasswordIsBcryptHashedAndNeverReturned() throws Exception {
+        String plainPassword = "safe-password";
+
+        MvcResult result = mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "new-user@example.com",
+                                plainPassword,
+                                "New",
+                                "User",
+                                "TENANT"
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andReturn();
+
+        User saved = userRepository.findByEmail("new-user@example.com")
+                .orElseThrow();
+        assertThat(saved.getPasswordHash()).isNotEqualTo(plainPassword);
+        assertThat(passwordEncoder.matches(plainPassword, saved.getPasswordHash()))
+                .isTrue();
+        assertThat(result.getResponse().getContentAsString())
+                .doesNotContain(plainPassword, saved.getPasswordHash());
+    }
+
+    @Test
+    void adminCreatedUserCanLogIn() throws Exception {
+        String password = "login-password";
+
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "login-user@example.com",
+                                password,
+                                "Login",
+                                "User",
+                                "TECHNICIAN"
+                        )))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "login-user@example.com",
+                                "password", password
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+    }
+
+    @Test
+    void duplicateEmailReturnsConflictRegardlessOfCase() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "  TENANT@EXAMPLE.COM  ",
+                                "another-password",
+                                "Duplicate",
+                                "Tenant",
+                                "TENANT"
+                        )))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Conflict"))
+                .andExpect(jsonPath("$.message").value(
+                        "A user with email tenant@example.com already exists"));
+    }
+
+    @Test
+    void tenantCannotCreateUser() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                tenant.getEmail(), TENANT_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "forbidden@example.com",
+                                "valid-password",
+                                "Forbidden",
+                                "User",
+                                "TENANT"
+                        )))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void technicianCannotCreateUser() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                technician.getEmail(), TECHNICIAN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "forbidden@example.com",
+                                "valid-password",
+                                "Forbidden",
+                                "User",
+                                "TENANT"
+                        )))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void userCreationWithoutJwtReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "unauthorized@example.com",
+                                "valid-password",
+                                "Unauthorized",
+                                "User",
+                                "TENANT"
+                        )))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Unauthorized"));
+    }
+
+    @Test
+    void weakPasswordReturnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "weak-password@example.com",
+                                "short",
+                                "Weak",
+                                "Password",
+                                "TENANT"
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Bad Request"));
+    }
+
+    @Test
+    void unknownRoleReturnsJsonBadRequest() throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createUserJson(
+                                "unknown-role@example.com",
+                                "valid-password",
+                                "Unknown",
+                                "Role",
+                                "OWNER"
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value("Request body is invalid"));
+    }
+
     private String login(String email, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -616,6 +808,22 @@ class AuthenticationAndAuthorizationIntegrationTests {
 
     private String statusUpdateJson(WorkOrderStatus status) throws Exception {
         return json(Map.of("status", status.name()));
+    }
+
+    private String createUserJson(
+            String email,
+            String password,
+            String firstName,
+            String lastName,
+            String role
+    ) throws Exception {
+        return json(Map.of(
+                "email", email,
+                "password", password,
+                "firstName", firstName,
+                "lastName", lastName,
+                "role", role
+        ));
     }
 
     private Set<String> responseIds(MvcResult result) throws Exception {
