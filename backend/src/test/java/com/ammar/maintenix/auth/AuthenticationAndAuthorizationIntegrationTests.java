@@ -34,9 +34,11 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -722,6 +724,260 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 .andExpect(jsonPath("$.message").value("Request body is invalid"));
     }
 
+    @Test
+    void adminCanCreateProperty() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/properties")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createPropertyJson(
+                                "  Central House  ",
+                                "  Main street 10  ",
+                                "  123 45  ",
+                                "  Gothenburg  ")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Central House"))
+                .andExpect(jsonPath("$.addressLine").value("Main street 10"))
+                .andExpect(jsonPath("$.postalCode").value("123 45"))
+                .andExpect(jsonPath("$.city").value("Gothenburg"))
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(
+                result.getResponse().getContentAsString());
+        assertThat(result.getResponse().getHeader("Location"))
+                .isEqualTo("/api/properties/" + response.get("id").asText());
+        assertThat(propertyRepository.findById(
+                UUID.fromString(response.get("id").asText())))
+                .isPresent();
+    }
+
+    @Test
+    void adminCanListAllProperties() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/properties")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andReturn();
+
+        assertThat(responseIds(result)).containsExactlyInAnyOrder(
+                tenantProperty.getId().toString(),
+                otherProperty.getId().toString());
+    }
+
+    @Test
+    void adminCanGetPropertyById() throws Exception {
+        mockMvc.perform(get("/api/properties/{id}", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(tenantProperty.getId().toString()))
+                .andExpect(jsonPath("$.name").value(tenantProperty.getName()))
+                .andExpect(jsonPath("$.active").value(true));
+    }
+
+    @Test
+    void missingPropertyReturnsNotFound() throws Exception {
+        mockMvc.perform(get("/api/properties/{id}", UUID.randomUUID())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not Found"));
+    }
+
+    @Test
+    void invalidPropertyReturnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/properties")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createPropertyJson("  ", "Street 1", "111 11", "City")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Bad Request"));
+    }
+
+    @Test
+    void tenantCannotCreateProperty() throws Exception {
+        mockMvc.perform(post("/api/properties")
+                        .header("Authorization", bearer(login(
+                                tenant.getEmail(), TENANT_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createPropertyJson(
+                                "Forbidden", "Street 1", "111 11", "City")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void technicianCannotListProperties() throws Exception {
+        mockMvc.perform(get("/api/properties")
+                        .header("Authorization", bearer(login(
+                                technician.getEmail(), TECHNICIAN_PASSWORD))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void propertiesWithoutJwtReturnUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/properties"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Unauthorized"));
+    }
+
+    @Test
+    void adminCanAddActiveTenantAsPropertyMember() throws Exception {
+        MvcResult result = mockMvc.perform(post(
+                        "/api/properties/{propertyId}/members", otherProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(addMemberJson(tenant.getId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.propertyId")
+                        .value(otherProperty.getId().toString()))
+                .andExpect(jsonPath("$.userId").value(tenant.getId().toString()))
+                .andExpect(jsonPath("$.email").value(tenant.getEmail()))
+                .andExpect(jsonPath("$.role").value("TENANT"))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andReturn();
+
+        assertThat(result.getResponse().getHeader("Location"))
+                .isEqualTo("/api/properties/" + otherProperty.getId()
+                        + "/members/" + tenant.getId());
+        assertThat(propertyMemberRepository.existsByPropertyIdAndUserId(
+                otherProperty.getId(), tenant.getId())).isTrue();
+    }
+
+    @Test
+    void duplicatePropertyMembershipReturnsConflict() throws Exception {
+        mockMvc.perform(post(
+                        "/api/properties/{propertyId}/members", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(addMemberJson(tenant.getId())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Conflict"));
+    }
+
+    @Test
+    void nonTenantCannotBecomePropertyMember() throws Exception {
+        mockMvc.perform(post(
+                        "/api/properties/{propertyId}/members", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(addMemberJson(technician.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Only tenants can be property members"));
+    }
+
+    @Test
+    void inactiveTenantCannotBecomePropertyMember() throws Exception {
+        User inactiveTenant = new User(
+                "inactive@example.com",
+                passwordEncoder.encode("inactive-password"),
+                "Inactive",
+                "Tenant",
+                UserRole.TENANT
+        );
+        inactiveTenant.setActive(false);
+        inactiveTenant = userRepository.save(inactiveTenant);
+
+        mockMvc.perform(post(
+                        "/api/properties/{propertyId}/members", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(addMemberJson(inactiveTenant.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("User account is inactive"));
+    }
+
+    @Test
+    void addingMissingUserAsMemberReturnsNotFound() throws Exception {
+        mockMvc.perform(post(
+                        "/api/properties/{propertyId}/members", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(addMemberJson(UUID.randomUUID())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not Found"));
+    }
+
+    @Test
+    void adminCanListPropertyMembers() throws Exception {
+        mockMvc.perform(get(
+                        "/api/properties/{propertyId}/members", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].propertyId")
+                        .value(tenantProperty.getId().toString()))
+                .andExpect(jsonPath("$[0].userId").value(tenant.getId().toString()))
+                .andExpect(jsonPath("$[0].email").value(tenant.getEmail()))
+                .andExpect(jsonPath("$[0].role").value("TENANT"))
+                .andExpect(jsonPath("$[0].passwordHash").doesNotExist());
+    }
+
+    @Test
+    void adminCanRemovePropertyMember() throws Exception {
+        mockMvc.perform(delete(
+                        "/api/properties/{propertyId}/members/{userId}",
+                        tenantProperty.getId(),
+                        tenant.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isNoContent())
+                .andExpect(result -> assertThat(
+                        result.getResponse().getContentAsString()).isEmpty());
+
+        assertThat(propertyMemberRepository.existsByPropertyIdAndUserId(
+                tenantProperty.getId(), tenant.getId())).isFalse();
+    }
+
+    @Test
+    void removingMissingMembershipReturnsNotFound() throws Exception {
+        mockMvc.perform(delete(
+                        "/api/properties/{propertyId}/members/{userId}",
+                        otherProperty.getId(),
+                        tenant.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not Found"));
+    }
+
+    @Test
+    void tenantCannotManagePropertyMembers() throws Exception {
+        mockMvc.perform(get(
+                        "/api/properties/{propertyId}/members", tenantProperty.getId())
+                        .header("Authorization", bearer(login(
+                                tenant.getEmail(), TENANT_PASSWORD))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void addingMemberToMissingPropertyReturnsNotFound() throws Exception {
+        mockMvc.perform(post(
+                        "/api/properties/{propertyId}/members", UUID.randomUUID())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(addMemberJson(tenant.getId())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not Found"));
+    }
+
     private String login(String email, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -824,6 +1080,24 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 "lastName", lastName,
                 "role", role
         ));
+    }
+
+    private String createPropertyJson(
+            String name,
+            String addressLine,
+            String postalCode,
+            String city
+    ) throws Exception {
+        return json(Map.of(
+                "name", name,
+                "addressLine", addressLine,
+                "postalCode", postalCode,
+                "city", city
+        ));
+    }
+
+    private String addMemberJson(UUID userId) throws Exception {
+        return json(Map.of("userId", userId));
     }
 
     private Set<String> responseIds(MvcResult result) throws Exception {

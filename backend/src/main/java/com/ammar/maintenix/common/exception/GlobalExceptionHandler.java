@@ -1,5 +1,6 @@
 package com.ammar.maintenix.common.exception;
 
+import com.ammar.maintenix.property.DuplicatePropertyMembershipException;
 import com.ammar.maintenix.workorder.InvalidWorkOrderStatusTransitionException;
 import com.ammar.maintenix.user.DuplicateEmailException;
 import jakarta.persistence.EntityNotFoundException;
@@ -59,6 +60,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateEmailException.class)
     public ResponseEntity<ApiErrorResponse> handleDuplicateEmail(
             DuplicateEmailException exception,
+            HttpServletRequest request
+    ) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(DuplicatePropertyMembershipException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicatePropertyMembership(
+            DuplicatePropertyMembershipException exception,
             HttpServletRequest request
     ) {
         return error(HttpStatus.CONFLICT, exception.getMessage(), request);
