@@ -9,6 +9,8 @@ Gränssnitt för inloggning, fastigheter och arbetsorder.
 3. Kör `npm install` och `npm run dev` i `frontend`.
 4. Öppna adressen som Vite visar (normalt `http://localhost:5173`).
 
-Vite skickar `/api` vidare till backend på port 8080. Logga in med administratörskontot, skapa en fastighet och sedan en arbetsorder. Administratörer ser alla fastigheter och arbetsorder, hyresgäster ser sina fastigheter och tillhörande arbetsorder, och tekniker ser sina tilldelade arbetsorder. Administratörer och hyresgäster kan skapa arbetsorder. Nya hyresgäster och kopplingar till fastigheter skapas tills vidare via API:et.
+Vite skickar `/api` vidare till backend på port 8080. Logga in med administratörskontot, skapa en fastighet och skapa sedan en hyresgäst under **Hyresgäster**. Välj fastigheten i samma formulär. Administratören kan också koppla en befintlig hyresgäst till fler fastigheter. Hyresgästen kan därefter logga in och skapa en arbetsorder för sin fastighet.
+
+Administratörer ser alla fastigheter och arbetsorder, hyresgäster ser sina fastigheter och tillhörande arbetsorder, och tekniker ser sina tilldelade arbetsorder. Administratörer och hyresgäster kan skapa arbetsorder.
 
 Inloggningen sparas i flikens `sessionStorage` tills fliken stängs eller token går ut. För produktionsdrift behöver frontend och backend serveras under samma ursprung, eller en motsvarande proxy för `/api`.

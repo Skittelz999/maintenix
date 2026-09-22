@@ -14,8 +14,9 @@ import {
   type Session,
   type WorkOrder,
 } from "./api";
+import TenantManagement from "./TenantManagement";
 
-type View = "overview" | "properties" | "orders";
+type View = "overview" | "properties" | "orders" | "tenants";
 
 const priorityLabels: Record<Priority, string> = {
   LOW: "Låg",
@@ -269,6 +270,14 @@ function App() {
           >
             <span aria-hidden="true">▦</span> Arbetsorder
           </button>
+          {session.role === "ADMIN" && (
+            <button
+              className={view === "tenants" ? "nav-item active" : "nav-item"}
+              onClick={() => setView("tenants")}
+            >
+              <span aria-hidden="true">♙</span> Hyresgäster
+            </button>
+          )}
         </nav>
         <div className="sidebar-bottom">
           <div className="account">
@@ -298,7 +307,9 @@ function App() {
               ? "ÖVERSIKT"
               : view === "properties"
                 ? "FASTIGHETER"
-                : "ARBETSORDER"}
+                : view === "orders"
+                  ? "ARBETSORDER"
+                  : "HYRESGÄSTER"}
           </span>
           <span className="today">{dateFormat.format(new Date())}</span>
           <button className="mobile-logout" onClick={signOut}>
@@ -444,6 +455,13 @@ function App() {
                 <OrderList orders={recentOrders} loading={loading} />
               </section>
             </>
+          )}
+          {view === "tenants" && session.role === "ADMIN" && (
+            <TenantManagement
+              token={session.token}
+              properties={properties}
+              onSessionExpired={signOut}
+            />
           )}
         </div>
       </main>

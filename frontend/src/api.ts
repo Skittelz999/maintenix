@@ -43,6 +43,29 @@ export interface NewProperty {
   city: string;
 }
 
+export interface Tenant {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: "TENANT";
+  active: boolean;
+}
+
+export interface PropertyMember {
+  id: string;
+  propertyId: string;
+  userId: string;
+}
+
+export interface NewTenant {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: "TENANT";
+}
+
 const SESSION_KEY = "maintenix.session";
 
 function decodeToken(
@@ -162,6 +185,38 @@ export function createProperty(token: string, property: NewProperty) {
       method: "POST",
       body: JSON.stringify(property),
     },
+    token,
+  );
+}
+
+export function getTenants(token: string) {
+  return request<Tenant[]>("/users?role=TENANT", {}, token);
+}
+
+export function createTenant(token: string, tenant: NewTenant) {
+  return request<Tenant>(
+    "/users",
+    { method: "POST", body: JSON.stringify(tenant) },
+    token,
+  );
+}
+
+export function getPropertyMembers(token: string, propertyId: string) {
+  return request<PropertyMember[]>(
+    `/properties/${propertyId}/members`,
+    {},
+    token,
+  );
+}
+
+export function addPropertyMember(
+  token: string,
+  propertyId: string,
+  userId: string,
+) {
+  return request<PropertyMember>(
+    `/properties/${propertyId}/members`,
+    { method: "POST", body: JSON.stringify({ userId }) },
     token,
   );
 }
