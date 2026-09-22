@@ -9,6 +9,7 @@ import com.ammar.maintenix.user.UserRepository;
 import com.ammar.maintenix.user.UserRole;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,9 +47,20 @@ public class PropertyService {
     }
 
     @Transactional(readOnly = true)
-    @PreAuthorize("hasRole('ADMIN')")
-    public List<PropertyResponse> getProperties() {
-        return propertyRepository.findAll().stream()
+    @PreAuthorize("hasAnyRole('ADMIN', 'TENANT')")
+    public List<PropertyResponse> getProperties(String currentUserEmail) {
+        User currentUser = userRepository.findByEmail(currentUserEmail)
+                .orElseThrow(() -> new AccessDeniedException("Authenticated user not found"));
+        if (!currentUser.isActive()) {
+            throw new AccessDeniedException("User account is inactive");
+        }
+
+        List<Property> properties = currentUser.getRole() == UserRole.ADMIN
+                ? propertyRepository.findAll()
+                : propertyMemberRepository.findAllByUserId(currentUser.getId()).stream()
+                        .map(PropertyMember::getProperty)
+                        .toList();
+        return properties.stream()
                 .map(this::mapProperty)
                 .toList();
     }

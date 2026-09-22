@@ -12,6 +12,7 @@
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/*.tsbuildinfo
 
 # Operating system
 .DS_Store

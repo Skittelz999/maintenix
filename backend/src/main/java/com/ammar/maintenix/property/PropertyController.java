@@ -6,6 +6,7 @@ import com.ammar.maintenix.property.dto.PropertyMemberResponse;
 import com.ammar.maintenix.property.dto.PropertyResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,8 +39,8 @@ public class PropertyController {
     }
 
     @GetMapping
-    public List<PropertyResponse> getProperties() {
-        return propertyService.getProperties();
+    public List<PropertyResponse> getProperties(Authentication authentication) {
+        return propertyService.getProperties(authentication.getName());
     }
 
     @GetMapping("/{propertyId}")

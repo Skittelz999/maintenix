@@ -858,6 +858,19 @@ class AuthenticationAndAuthorizationIntegrationTests {
     }
 
     @Test
+    void tenantCanListOnlyOwnProperties() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/properties")
+                        .header("Authorization", bearer(login(
+                                tenant.getEmail(), TENANT_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andReturn();
+
+        assertThat(responseIds(result)).containsExactly(
+                tenantProperty.getId().toString());
+    }
+
+    @Test
     void adminCanGetPropertyById() throws Exception {
         mockMvc.perform(get("/api/properties/{id}", tenantProperty.getId())
                         .header("Authorization", bearer(login(

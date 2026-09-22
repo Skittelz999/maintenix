@@ -14,5 +14,8 @@ public interface PropertyMemberRepository extends JpaRepository<PropertyMember, 
     @EntityGraph(attributePaths = {"property", "user"})
     List<PropertyMember> findAllByPropertyId(UUID propertyId);
 
+    @EntityGraph(attributePaths = {"property"})
+    List<PropertyMember> findAllByUserId(UUID userId);
+
     Optional<PropertyMember> findByPropertyIdAndUserId(UUID propertyId, UUID userId);
 }
