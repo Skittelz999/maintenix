@@ -154,6 +154,11 @@ public class WorkOrderService {
 
         User currentUser = getCurrentUser(currentUserEmail);
 
+        if (request.getStatus() == WorkOrderStatus.CLOSED
+                && currentUser.getRole() != UserRole.ADMIN) {
+            throw new AccessDeniedException("Only admins can close work orders");
+        }
+
         if (currentUser.getRole() == UserRole.TECHNICIAN
                 && (workOrder.getAssignedTo() == null
                 || !workOrder.getAssignedTo().getId()
@@ -193,6 +198,14 @@ public class WorkOrderService {
         if (user.getRole() != UserRole.TECHNICIAN) {
             throw new IllegalArgumentException(
                     "User is not a technician");
+        }
+        if (!user.isActive()) {
+            throw new IllegalArgumentException("Technician account is inactive");
+        }
+        if (workOrder.getStatus() == WorkOrderStatus.COMPLETED
+                || workOrder.getStatus() == WorkOrderStatus.CLOSED
+                || workOrder.getStatus() == WorkOrderStatus.CANCELLED) {
+            throw new IllegalArgumentException("Cannot assign a finished work order");
         }
 
         if (workOrder.getStatus() == WorkOrderStatus.NEW) {

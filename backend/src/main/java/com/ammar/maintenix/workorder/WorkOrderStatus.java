@@ -9,6 +9,7 @@ public enum WorkOrderStatus {
     IN_PROGRESS,
     ON_HOLD,
     COMPLETED,
+    CLOSED,
     CANCELLED;
 
     private static final Map<WorkOrderStatus, Set<WorkOrderStatus>>
@@ -17,7 +18,8 @@ public enum WorkOrderStatus {
                     ASSIGNED, Set.of(IN_PROGRESS, CANCELLED),
                     IN_PROGRESS, Set.of(ON_HOLD, COMPLETED, CANCELLED),
                     ON_HOLD, Set.of(IN_PROGRESS, CANCELLED),
-                    COMPLETED, Set.of(),
+                    COMPLETED, Set.of(CLOSED),
+                    CLOSED, Set.of(),
                     CANCELLED, Set.of()
             );
 

@@ -230,6 +230,42 @@ class AuthenticationAndAuthorizationIntegrationTests {
     }
 
     @Test
+    void adminCannotAssignCompletedWorkOrder() throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty, technician, "Completed order", WorkOrderStatus.COMPLETED);
+
+        mockMvc.perform(patch("/api/work-orders/{id}/assign", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("technicianId", otherTechnician.getId()))))
+                .andExpect(status().isBadRequest());
+
+        WorkOrder saved = workOrderRepository.findById(workOrder.getId()).orElseThrow();
+        assertThat(saved.getAssignedTo().getId()).isEqualTo(technician.getId());
+        assertThat(saved.getStatus()).isEqualTo(WorkOrderStatus.COMPLETED);
+    }
+
+    @Test
+    void adminCannotAssignInactiveTechnician() throws Exception {
+        otherTechnician.setActive(false);
+        userRepository.saveAndFlush(otherTechnician);
+        WorkOrder workOrder = workOrderRepository.save(
+                new WorkOrder(tenantProperty, tenant, "New order", "Description"));
+
+        mockMvc.perform(patch("/api/work-orders/{id}/assign", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("technicianId", otherTechnician.getId()))))
+                .andExpect(status().isBadRequest());
+
+        WorkOrder saved = workOrderRepository.findById(workOrder.getId()).orElseThrow();
+        assertThat(saved.getAssignedTo()).isNull();
+        assertThat(saved.getStatus()).isEqualTo(WorkOrderStatus.NEW);
+    }
+
+    @Test
     void creatorComesFromJwtAndCannotBeSpoofedByRequest() throws Exception {
         mockMvc.perform(post("/api/work-orders")
                         .header("Authorization", bearer(login(tenant.getEmail(), TENANT_PASSWORD)))
@@ -452,6 +488,26 @@ class AuthenticationAndAuthorizationIntegrationTests {
                         .content(statusUpdateJson(WorkOrderStatus.IN_PROGRESS)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+    }
+
+    @Test
+    void technicianCannotCloseCompletedWorkOrder() throws Exception {
+        WorkOrder workOrder = saveWorkOrderWithStatus(
+                tenantProperty,
+                technician,
+                "Completed order",
+                WorkOrderStatus.COMPLETED
+        );
+
+        mockMvc.perform(patch("/api/work-orders/{id}/status", workOrder.getId())
+                        .header("Authorization", bearer(login(
+                                technician.getEmail(), TECHNICIAN_PASSWORD)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(statusUpdateJson(WorkOrderStatus.CLOSED)))
+                .andExpect(status().isForbidden());
+
+        assertThat(workOrderRepository.findById(workOrder.getId()).orElseThrow()
+                .getStatus()).isEqualTo(WorkOrderStatus.COMPLETED);
     }
 
     @Test
@@ -1140,6 +1196,12 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 workOrder.transitionTo(WorkOrderStatus.IN_PROGRESS);
                 workOrder.transitionTo(WorkOrderStatus.COMPLETED);
             }
+            case CLOSED -> {
+                workOrder.transitionTo(WorkOrderStatus.ASSIGNED);
+                workOrder.transitionTo(WorkOrderStatus.IN_PROGRESS);
+                workOrder.transitionTo(WorkOrderStatus.COMPLETED);
+                workOrder.transitionTo(WorkOrderStatus.CLOSED);
+            }
             case CANCELLED -> workOrder.transitionTo(WorkOrderStatus.CANCELLED);
         }
     }
@@ -1150,6 +1212,7 @@ class AuthenticationAndAuthorizationIntegrationTests {
                 Arguments.of(WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.ON_HOLD),
                 Arguments.of(WorkOrderStatus.ON_HOLD, WorkOrderStatus.IN_PROGRESS),
                 Arguments.of(WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.COMPLETED),
+                Arguments.of(WorkOrderStatus.COMPLETED, WorkOrderStatus.CLOSED),
                 Arguments.of(WorkOrderStatus.NEW, WorkOrderStatus.CANCELLED)
         );
     }
@@ -1157,8 +1220,10 @@ class AuthenticationAndAuthorizationIntegrationTests {
     private static Stream<Arguments> invalidStatusTransitions() {
         return Stream.of(
                 Arguments.of(WorkOrderStatus.NEW, WorkOrderStatus.COMPLETED),
+                Arguments.of(WorkOrderStatus.NEW, WorkOrderStatus.CLOSED),
                 Arguments.of(WorkOrderStatus.ASSIGNED, WorkOrderStatus.COMPLETED),
                 Arguments.of(WorkOrderStatus.COMPLETED, WorkOrderStatus.IN_PROGRESS),
+                Arguments.of(WorkOrderStatus.CLOSED, WorkOrderStatus.IN_PROGRESS),
                 Arguments.of(WorkOrderStatus.CANCELLED, WorkOrderStatus.IN_PROGRESS),
                 Arguments.of(WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.IN_PROGRESS)
         );

@@ -13,4 +13,6 @@ Vite skickar `/api` vidare till backend på port 8080. Logga in med administrat�
 
 Administratörer ser alla fastigheter och arbetsorder, hyresgäster ser sina fastigheter och tillhörande arbetsorder, och tekniker ser sina tilldelade arbetsorder. Administratörer och hyresgäster kan skapa arbetsorder.
 
+För att prova hela arbetsflödet: skapa en tekniker under **Tekniker**, tilldela en ny arbetsorder på sidan **Arbetsorder**, logga in som teknikern och välj **Starta arbete** följt av **Markera färdig**. Logga sedan in som administratör och välj **Stäng ärende**. Teknikern kan även pausa och återuppta arbetet. Lösenord till nya konton lämnas separat till användaren.
+
 Inloggningen sparas i flikens `sessionStorage` tills fliken stängs eller token går ut. För produktionsdrift behöver frontend och backend serveras under samma ursprung, eller en motsvarande proxy för `/api`.

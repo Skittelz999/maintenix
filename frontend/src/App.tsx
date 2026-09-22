@@ -1,22 +1,35 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   clearSession,
   createProperty,
   createWorkOrder,
+  getTechnicians,
   getProperties,
   getWorkOrders,
   login,
   readSession,
+  assignTechnician,
+  updateWorkOrderStatus,
   type NewProperty,
   type NewWorkOrder,
   type Priority,
   type Property,
+  type Role,
   type Session,
+  type Technician,
   type WorkOrder,
+  type WorkOrderStatus,
 } from "./api";
 import TenantManagement from "./TenantManagement";
+import TechnicianManagement from "./TechnicianManagement";
 
-type View = "overview" | "properties" | "orders" | "tenants";
+type View = "overview" | "properties" | "orders" | "tenants" | "technicians";
 
 const priorityLabels: Record<Priority, string> = {
   LOW: "Låg",
@@ -25,12 +38,12 @@ const priorityLabels: Record<Priority, string> = {
   URGENT: "Akut",
 };
 
-const statusLabels: Record<string, string> = {
+const statusLabels: Record<WorkOrderStatus, string> = {
   NEW: "Ny",
   ASSIGNED: "Tilldelad",
   IN_PROGRESS: "Pågår",
-  WAITING_FOR_PARTS: "Väntar på delar",
-  RESOLVED: "Löst",
+  ON_HOLD: "Pausad",
+  COMPLETED: "Färdig för granskning",
   CLOSED: "Stängd",
   CANCELLED: "Avbruten",
 };
@@ -153,6 +166,7 @@ function App() {
   const [session, setSession] = useState<Session | null>(readSession);
   const [properties, setProperties] = useState<Property[]>([]);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [view, setView] = useState<View>("overview");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -165,6 +179,7 @@ function App() {
     setSession(null);
     setProperties([]);
     setOrders([]);
+    setTechnicians([]);
     setError("");
     setNotice("");
     setView("overview");
@@ -175,14 +190,18 @@ function App() {
       setLoading(true);
       setError("");
       try {
-        const [newProperties, newOrders] = await Promise.all([
+        const [newProperties, newOrders, newTechnicians] = await Promise.all([
           current.role === "TECHNICIAN"
             ? Promise.resolve([])
             : getProperties(current.token),
           getWorkOrders(current.token),
+          current.role === "ADMIN"
+            ? getTechnicians(current.token)
+            : Promise.resolve([]),
         ]);
         setProperties(newProperties);
         setOrders(newOrders);
+        setTechnicians(newTechnicians);
       } catch (cause) {
         const message =
           cause instanceof Error
@@ -226,8 +245,15 @@ function App() {
     b.createdAt.localeCompare(a.createdAt),
   );
   const openOrders = orders.filter(
-    (order) => !["CLOSED", "CANCELLED", "RESOLVED"].includes(order.status),
+    (order) => !["COMPLETED", "CLOSED", "CANCELLED"].includes(order.status),
   ).length;
+
+  function onOrderUpdated(updated: WorkOrder) {
+    setOrders((current) =>
+      current.map((order) => (order.id === updated.id ? updated : order)),
+    );
+    setNotice("Arbetsordern har uppdaterats.");
+  }
 
   async function onCreated() {
     setShowCreate(false);
@@ -278,6 +304,16 @@ function App() {
               <span aria-hidden="true">♙</span> Hyresgäster
             </button>
           )}
+          {session.role === "ADMIN" && (
+            <button
+              className={
+                view === "technicians" ? "nav-item active" : "nav-item"
+              }
+              onClick={() => setView("technicians")}
+            >
+              <span aria-hidden="true">⚙</span> Tekniker
+            </button>
+          )}
         </nav>
         <div className="sidebar-bottom">
           <div className="account">
@@ -309,7 +345,9 @@ function App() {
                 ? "FASTIGHETER"
                 : view === "orders"
                   ? "ARBETSORDER"
-                  : "HYRESGÄSTER"}
+                  : view === "tenants"
+                    ? "HYRESGÄSTER"
+                    : "TEKNIKER"}
           </span>
           <span className="today">{dateFormat.format(new Date())}</span>
           <button className="mobile-logout" onClick={signOut}>
@@ -387,6 +425,7 @@ function App() {
                 <OrderList
                   orders={recentOrders.slice(0, 5)}
                   loading={loading}
+                  role={session.role}
                 />
               </section>
               <section className="panel property-preview">
@@ -452,7 +491,16 @@ function App() {
                 )}
               </div>
               <section className="panel">
-                <OrderList orders={recentOrders} loading={loading} />
+                <OrderList
+                  orders={recentOrders}
+                  loading={loading}
+                  role={session.role}
+                  token={session.token}
+                  technicians={technicians}
+                  onUpdated={onOrderUpdated}
+                  onSessionExpired={signOut}
+                  onNavigateTechnicians={() => setView("technicians")}
+                />
               </section>
             </>
           )}
@@ -460,6 +508,15 @@ function App() {
             <TenantManagement
               token={session.token}
               properties={properties}
+              onSessionExpired={signOut}
+            />
+          )}
+          {view === "technicians" && session.role === "ADMIN" && (
+            <TechnicianManagement
+              token={session.token}
+              technicians={technicians}
+              loading={loading}
+              onCreated={() => void refresh(session)}
               onSessionExpired={signOut}
             />
           )}
@@ -647,9 +704,21 @@ function PropertyList({
 function OrderList({
   orders,
   loading,
+  role,
+  token,
+  technicians = [],
+  onUpdated,
+  onSessionExpired,
+  onNavigateTechnicians,
 }: {
   orders: WorkOrder[];
   loading: boolean;
+  role: Role;
+  token?: string;
+  technicians?: Technician[];
+  onUpdated?: (order: WorkOrder) => void;
+  onSessionExpired?: () => void;
+  onNavigateTechnicians?: () => void;
 }) {
   if (loading) return <div className="empty">Laddar arbetsorder…</div>;
   if (!orders.length)
@@ -670,13 +739,172 @@ function OrderList({
               <span>▤ {order.propertyName}</span>
               <span>◷ {displayDate(order.createdAt)}</span>
               <span>Av {order.createdByName}</span>
+              {order.assignedToUserId && (
+                <span>
+                  Tilldelad:{" "}
+                  {technicians.find(
+                    (technician) => technician.id === order.assignedToUserId,
+                  )?.firstName ?? "tekniker"}
+                </span>
+              )}
             </div>
+            {token && onUpdated && onSessionExpired && (
+              <OrderActions
+                order={order}
+                role={role}
+                token={token}
+                technicians={technicians}
+                onUpdated={onUpdated}
+                onSessionExpired={onSessionExpired}
+                onNavigateTechnicians={onNavigateTechnicians}
+              />
+            )}
           </div>
           <span className={`priority priority-${order.priority.toLowerCase()}`}>
             {priorityLabels[order.priority]}
           </span>
         </article>
       ))}
+    </div>
+  );
+}
+
+function OrderActions({
+  order,
+  role,
+  token,
+  technicians,
+  onUpdated,
+  onSessionExpired,
+  onNavigateTechnicians,
+}: {
+  order: WorkOrder;
+  role: Role;
+  token: string;
+  technicians: Technician[];
+  onUpdated: (order: WorkOrder) => void;
+  onSessionExpired: () => void;
+  onNavigateTechnicians?: () => void;
+}) {
+  const [selectedTechnician, setSelectedTechnician] = useState(
+    order.assignedToUserId || "",
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const activeTechnicians = technicians.filter(
+    (technician) => technician.active,
+  );
+
+  async function perform(action: () => Promise<WorkOrder>) {
+    setBusy(true);
+    setError("");
+    try {
+      onUpdated(await action());
+    } catch (cause) {
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : "Det gick inte att uppdatera arbetsordern.";
+      if (message.includes("session har gått ut")) onSessionExpired();
+      else setError(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  let actions: ReactNode = null;
+  if (role === "ADMIN" && order.status === "COMPLETED") {
+    actions = (
+      <button
+        className="button primary compact"
+        disabled={busy}
+        onClick={() =>
+          void perform(() => updateWorkOrderStatus(token, order.id, "CLOSED"))
+        }
+      >
+        {busy ? "Stänger…" : "Stäng ärende"}
+      </button>
+    );
+  } else if (
+    role === "ADMIN" &&
+    !["COMPLETED", "CLOSED", "CANCELLED"].includes(order.status)
+  ) {
+    actions = activeTechnicians.length ? (
+      <>
+        <select
+          aria-label={`Tilldela tekniker för ${order.title}`}
+          value={selectedTechnician}
+          onChange={(event) => setSelectedTechnician(event.target.value)}
+        >
+          <option value="">Välj tekniker</option>
+          {activeTechnicians.map((technician) => (
+            <option key={technician.id} value={technician.id}>
+              {technician.firstName} {technician.lastName}
+            </option>
+          ))}
+        </select>
+        <button
+          className="button secondary compact"
+          disabled={
+            busy ||
+            !selectedTechnician ||
+            selectedTechnician === order.assignedToUserId
+          }
+          onClick={() =>
+            void perform(() =>
+              assignTechnician(token, order.id, selectedTechnician),
+            )
+          }
+        >
+          {busy
+            ? "Sparar…"
+            : order.assignedToUserId
+              ? "Byt tekniker"
+              : "Tilldela"}
+        </button>
+      </>
+    ) : (
+      <button className="text-button" onClick={onNavigateTechnicians}>
+        Skapa en tekniker →
+      </button>
+    );
+  } else if (role === "TECHNICIAN") {
+    const next: { status: WorkOrderStatus; label: string }[] =
+      order.status === "ASSIGNED"
+        ? [{ status: "IN_PROGRESS", label: "Starta arbete" }]
+        : order.status === "IN_PROGRESS"
+          ? [
+              { status: "ON_HOLD", label: "Pausa" },
+              { status: "COMPLETED", label: "Markera färdig" },
+            ]
+          : order.status === "ON_HOLD"
+            ? [{ status: "IN_PROGRESS", label: "Återuppta" }]
+            : [];
+    actions = next.map((action) => (
+      <button
+        className="button secondary compact"
+        key={action.status}
+        disabled={busy}
+        onClick={() =>
+          void perform(() =>
+            updateWorkOrderStatus(token, order.id, action.status),
+          )
+        }
+      >
+        {busy ? "Sparar…" : action.label}
+      </button>
+    ));
+  }
+
+  if (!actions && !error) return null;
+  return (
+    <div className="order-controls">
+      {actions}
+      {error && (
+        <span className="order-action-error" role="alert">
+          {error}
+        </span>
+      )}
     </div>
   );
 }

@@ -1,5 +1,13 @@
 export type Role = "ADMIN" | "TENANT" | "TECHNICIAN";
 export type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type WorkOrderStatus =
+  | "NEW"
+  | "ASSIGNED"
+  | "IN_PROGRESS"
+  | "ON_HOLD"
+  | "COMPLETED"
+  | "CLOSED"
+  | "CANCELLED";
 
 export interface Session {
   token: string;
@@ -23,10 +31,11 @@ export interface WorkOrder {
   propertyName: string;
   title: string;
   description: string;
-  status: string;
+  status: WorkOrderStatus;
   priority: Priority;
   createdAt: string;
   createdByName: string;
+  assignedToUserId: string | null;
 }
 
 export interface NewWorkOrder {
@@ -64,6 +73,23 @@ export interface NewTenant {
   firstName: string;
   lastName: string;
   role: "TENANT";
+}
+
+export interface Technician {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: "TECHNICIAN";
+  active: boolean;
+}
+
+export interface NewTechnician {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: "TECHNICIAN";
 }
 
 const SESSION_KEY = "maintenix.session";
@@ -217,6 +243,42 @@ export function addPropertyMember(
   return request<PropertyMember>(
     `/properties/${propertyId}/members`,
     { method: "POST", body: JSON.stringify({ userId }) },
+    token,
+  );
+}
+
+export function getTechnicians(token: string) {
+  return request<Technician[]>("/users?role=TECHNICIAN", {}, token);
+}
+
+export function createTechnician(token: string, technician: NewTechnician) {
+  return request<Technician>(
+    "/users",
+    { method: "POST", body: JSON.stringify(technician) },
+    token,
+  );
+}
+
+export function assignTechnician(
+  token: string,
+  orderId: string,
+  technicianId: string,
+) {
+  return request<WorkOrder>(
+    `/work-orders/${orderId}/assign`,
+    { method: "PATCH", body: JSON.stringify({ technicianId }) },
+    token,
+  );
+}
+
+export function updateWorkOrderStatus(
+  token: string,
+  orderId: string,
+  status: WorkOrderStatus,
+) {
+  return request<WorkOrder>(
+    `/work-orders/${orderId}/status`,
+    { method: "PATCH", body: JSON.stringify({ status }) },
     token,
   );
 }
