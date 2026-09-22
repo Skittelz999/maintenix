@@ -2,13 +2,16 @@ package com.ammar.maintenix.user;
 
 import com.ammar.maintenix.user.dto.CreateUserRequest;
 import com.ammar.maintenix.user.dto.UserResponse;
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class UserService {
@@ -46,6 +49,36 @@ public class UserService {
         } catch (DataIntegrityViolationException exception) {
             throw new DuplicateEmailException(email);
         }
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<UserResponse> getUsers(UserRole role, Boolean active) {
+        List<User> users;
+
+        if (role != null && active != null) {
+            users = userRepository.findAllByRoleAndActiveOrderByEmailAsc(
+                    role, active);
+        } else if (role != null) {
+            users = userRepository.findAllByRoleOrderByEmailAsc(role);
+        } else if (active != null) {
+            users = userRepository.findAllByActiveOrderByEmailAsc(active);
+        } else {
+            users = userRepository.findAllByOrderByEmailAsc();
+        }
+
+        return users.stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponse getUser(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "User not found with id: " + userId));
+        return mapToResponse(user);
     }
 
     private UserResponse mapToResponse(User user) {

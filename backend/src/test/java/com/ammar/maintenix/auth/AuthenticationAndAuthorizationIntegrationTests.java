@@ -725,6 +725,95 @@ class AuthenticationAndAuthorizationIntegrationTests {
     }
 
     @Test
+    void adminCanListUsersWithoutExposingPasswords() throws Exception {
+        mockMvc.perform(get("/api/users")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(4))
+                .andExpect(jsonPath("$[0].email").value(admin.getEmail()))
+                .andExpect(jsonPath("$[*].password").doesNotExist())
+                .andExpect(jsonPath("$[*].passwordHash").doesNotExist());
+    }
+
+    @Test
+    void adminCanFilterUsersByRoleAndActiveStatus() throws Exception {
+        otherTechnician.setActive(false);
+        userRepository.saveAndFlush(otherTechnician);
+
+        mockMvc.perform(get("/api/users")
+                        .queryParam("role", "TECHNICIAN")
+                        .queryParam("active", "true")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id")
+                        .value(technician.getId().toString()))
+                .andExpect(jsonPath("$[0].role").value("TECHNICIAN"))
+                .andExpect(jsonPath("$[0].active").value(true));
+    }
+
+    @Test
+    void adminCanFilterUsersByOneFilterAtATime() throws Exception {
+        otherTechnician.setActive(false);
+        userRepository.saveAndFlush(otherTechnician);
+
+        mockMvc.perform(get("/api/users")
+                        .queryParam("role", "TECHNICIAN")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+
+        mockMvc.perform(get("/api/users")
+                        .queryParam("active", "false")
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id")
+                        .value(otherTechnician.getId().toString()));
+    }
+
+    @Test
+    void adminCanGetUserById() throws Exception {
+        mockMvc.perform(get("/api/users/{userId}", tenant.getId())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(tenant.getId().toString()))
+                .andExpect(jsonPath("$.email").value(tenant.getEmail()))
+                .andExpect(jsonPath("$.role").value("TENANT"))
+                .andExpect(jsonPath("$.passwordHash").doesNotExist());
+    }
+
+    @Test
+    void missingUserReturnsNotFound() throws Exception {
+        mockMvc.perform(get("/api/users/{userId}", UUID.randomUUID())
+                        .header("Authorization", bearer(login(
+                                admin.getEmail(), ADMIN_PASSWORD))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Not Found"));
+    }
+
+    @Test
+    void tenantCannotListUsers() throws Exception {
+        mockMvc.perform(get("/api/users")
+                        .header("Authorization", bearer(login(
+                                tenant.getEmail(), TENANT_PASSWORD))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("Forbidden"));
+    }
+
+    @Test
+    void userDirectoryWithoutJwtReturnsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/users"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Unauthorized"));
+    }
+
+    @Test
     void adminCanCreateProperty() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/properties")
                         .header("Authorization", bearer(login(
