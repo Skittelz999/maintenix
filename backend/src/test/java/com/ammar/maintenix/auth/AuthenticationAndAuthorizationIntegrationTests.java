@@ -167,6 +167,14 @@ class AuthenticationAndAuthorizationIntegrationTests {
     }
 
     @Test
+    void healthWithoutJwtReturnsOnlyOverallStatus() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
     void workOrdersWithoutJwtReturnsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/work-orders"))
                 .andExpect(status().isUnauthorized())
