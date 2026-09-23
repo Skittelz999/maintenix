@@ -1,6 +1,12 @@
 # Maintenix
 
+[![CI](https://github.com/Skittelz999/maintenix/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Skittelz999/maintenix/actions/workflows/ci.yml)
+
 Maintenix samlar fastigheter och arbetsorder i ett webbaserat gränssnitt. Backend är byggd med Spring Boot och PostgreSQL; frontend med React och Vite.
+
+## CI
+
+GitHub Actions kör vid push till `main` och pull requests mot `main`. CI verifierar backendens hela testsvit med Java 21 och Testcontainers, frontendens produktionsbygge med Node.js 24 LTS samt backendens Docker-image. Backendtester och frontendbygge körs parallellt; Docker-bygget startar först när backendtesterna lyckats. Inga egna repository secrets behövs, och inga images publiceras eller driftsätts.
 
 ## Kör lokalt
 
