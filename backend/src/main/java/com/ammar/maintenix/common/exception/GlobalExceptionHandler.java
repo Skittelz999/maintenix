@@ -5,6 +5,7 @@ import com.ammar.maintenix.workorder.InvalidWorkOrderStatusTransitionException;
 import com.ammar.maintenix.user.DuplicateEmailException;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -16,6 +17,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleConcurrentUpdate(
+            OptimisticLockingFailureException exception,
+            HttpServletRequest request
+    ) {
+        return error(HttpStatus.CONFLICT,
+                "The record was changed by another request. Reload and try again.", request);
+    }
 
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleEntityNotFound(
