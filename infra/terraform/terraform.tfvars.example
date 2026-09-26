@@ -1,0 +1,21 @@
+project_name = "maintenix"
+environment  = "prod"
+region       = "eu-north-1"
+vpc_cidr     = "10.20.0.0/16"
+
+db_name              = "maintenix"
+db_username          = "maintenix_admin"
+db_instance_class    = "db.t4g.micro"
+db_allocated_storage = 20
+# No password variable: RDS creates and manages its Secrets Manager secret.
+
+subnets = {
+  eu-north-1a = {
+    public_cidr  = "10.20.0.0/24"
+    private_cidr = "10.20.10.0/24"
+  }
+  eu-north-1b = {
+    public_cidr  = "10.20.1.0/24"
+    private_cidr = "10.20.11.0/24"
+  }
+}
