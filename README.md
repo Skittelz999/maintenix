@@ -23,6 +23,28 @@ Aktivera `application-prod.properties` med `SPRING_PROFILES_ACTIVE=prod`. Sätt 
 
 Terminera HTTPS i en betrodd reverse proxy/load balancer och tillåt endast trafik därifrån till backend. Produktionsprofilen använder Tomcats stöd för `X-Forwarded-For` och `X-Forwarded-Proto`; kontrollera proxyernas betrodda adresser och att klientens vidarebefordrade headers hanteras säkert. Se [Spring Boots proxydokumentation](https://docs.spring.io/spring-boot/how-to/webserver.html). Använd TLS med servercertifikatverifiering för databasanslutningen och håll databasen privat. Flyway kör migreringar vid start och Hibernate validerar schemat.
 
+Vid kommande AWS-deployment ska load balancern ha HTTPS på port 443 med ett giltigt certifikat; eventuell publik port 80 ska endast omdirigera till HTTPS. Backendens port 8080 ska vara privat och dess security group endast tillåta trafik från load balancerns security group. Databasen ska endast tillåta anslutningar från backend. Applikationens interna HTTP-anslutning och HTTP-health check förutsätter denna nätverksgräns; backend ska inte exponeras direkt mot internet.
+
+Behåll `server.forward-headers-strategy=native` och Tomcats filtrering av betrodda proxyadresser. Anpassa vid behov `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` till deploymentens proxyadresser; sätt aldrig ett tomt värde, eftersom det litar på alla avsändare. Proxy/load balancer ska sätta korrekt `X-Forwarded-Proto` och hantera `X-Forwarded-For` så att klientens egna headers inte betraktas som betrodda. HTTPS-omdirigering sker i load balancern, så interna health checks kan fortsätta använda HTTP.
+
+### PostgreSQL TLS
+
+Använd följande form för `DB_URL` i produktion, med den riktiga RDS-endpointen som värdnamn:
+
+```text
+jdbc:postgresql://<rds-endpoint>:5432/maintenix?sslmode=verify-full&sslrootcert=/app/certs/rds-ca-bundle.pem
+```
+
+`verify-full` kontrollerar både certifikatkedjan och värdnamnet. `require` krypterar men verifierar inte serverns identitet; standardläget `prefer` kan dessutom falla tillbaka till okrypterat. Hämta aktuell CA-bundle från [AWS RDS-certifikatdokumentationen](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html) och gör den tillgänglig skrivskyddad på angiven sökväg i containern, läsbar för UID 10001. CA-bundlen är publik; lösenord och privata nycklar ska aldrig byggas in i imagen. För lokal Dockerkörning kan filen bind-mountas med `--mount type=bind,source=<absolut-ca-fil>,target=/app/certs/rds-ca-bundle.pem,readonly`.
+
+Kontrollera också att RDS kräver TLS genom `rds.force_ssl=1`. Det ersätter inte klientens certifikat- och värdnamnsverifiering. Samma JDBC-URL används av Flyway. Innan publik drift ska anslutningen provas med rätt CA och därefter verifieras att fel CA eller värdnamn avvisas. Se [pgJDBC:s SSL-dokumentation](https://jdbc.postgresql.org/documentation/ssl/) och [RDS PostgreSQL TLS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.SSL.html). Lokal utveckling och Testcontainers använder fortsatt sin lokala databas utan TLS; produktions-URL:n behöver därför konfigureras uttryckligen enligt ovan.
+
+### JWT och lokala hemligheter
+
+JWT måste ha applikationens issuer (`maintenix`) och en giltig expiration. Signatur, HS256 och tidsvalidering behålls. Använd en separat slumpmässig `JWT_SECRET` för varje miljö; dela inte nyckeln med andra applikationer. Aktuell användarstatus och roll kontrolleras i databasen för varje autentiserat JWT-anrop.
+
+Git ignorerar `.env`, `.env.*`, `*.env`, lokala `secrets`/`.secrets`/`.aws`-kataloger, privata nyckelfiler, keystores och `application-local.*`. Dockerbyggkontexten utesluter också dessa filer. Ignorering skyddar mot vanlig oavsiktlig incheckning, men stoppar inte `git add -f`, redan spårade filer eller hemligheter inskrivna i vanlig källkod. Granska därför alltid staged diff; lagra produktionsuppgifter i driftmiljöns hemlighetshantering.
+
 För första administratören kan `BOOTSTRAP_ADMIN_EMAIL` och `BOOTSTRAP_ADMIN_PASSWORD` sättas tillsammans. E-postadressen trimmas och normaliseras till gemener. Finns adressen redan lämnas hela kontot orört, även om det har en annan roll. Utelämna båda variablerna för att stänga av bootstrap; om bara en anges avbryts starten. Ta bort bootstrap-uppgifterna från driftmiljön efter att kontot skapats. Kör första bootstrap på en instans: samtidiga försök att skapa samma adress kan ge ett unikhetsfel, men skriver inte över ett befintligt konto.
 
 ## Backend med Docker
@@ -38,7 +60,7 @@ Imagen byggs med Java 21 och Maven Wrapper och kör endast JAR-filen med Java 21
 Containern använder `SPRING_PROFILES_ACTIVE=prod` som standard. Sätt `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` och `JWT_SECRET` i körmiljön enligt produktionsavsnittet ovan. Databasens värdnamn måste kunna nås från containern; `localhost` avser containern själv. Om variablerna redan finns i terminalmiljön kan imagen startas så här:
 
 ```sh
-docker run --rm -p 8080:8080 --env SPRING_PROFILES_ACTIVE=prod --env DB_URL --env DB_USERNAME --env DB_PASSWORD --env JWT_SECRET maintenix-backend:local
+docker run --rm -p 127.0.0.1:8080:8080 --env SPRING_PROFILES_ACTIVE=prod --env DB_URL --env DB_USERNAME --env DB_PASSWORD --env JWT_SECRET maintenix-backend:local
 ```
 
 `PORT` är valfri (standard `8080`); ändras den måste även portmappning och plattformens health check uppdateras. Bootstrap-variablerna är valfria och skickas endast in när ett första administratörskonto behövs. Inga hemligheter ska anges i Dockerfile eller byggargument.

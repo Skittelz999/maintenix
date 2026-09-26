@@ -11,6 +11,17 @@
 **/.env
 **/.env.*
 **/*.env
+**/secrets
+**/.secrets
+**/.aws
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/id_rsa
+**/id_ed25519
 **/application-local.*
 **/*.log
 **/logs

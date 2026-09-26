@@ -7,7 +7,22 @@
 
 # Environment variables
 .env
+.env.*
 *.env
+
+# Local credentials, private keys and keystores
+secrets/
+.secrets/
+.aws/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+application-local.*
 
 # Frontend
 frontend/node_modules/

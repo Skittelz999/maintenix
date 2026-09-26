@@ -11,7 +11,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -20,6 +27,13 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -27,7 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
-@SpringBootTest(properties = {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "app.bootstrap-admin.email=",
         "app.bootstrap-admin.password="
 })
@@ -57,6 +71,15 @@ class ActuatorIntegrationTests {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private JwtDecoder jwtDecoder;
+
+    @Autowired
+    private JwtEncoder jwtEncoder;
+
+    @LocalServerPort
+    private int port;
 
     @BeforeEach
     void cleanDatabase() {
@@ -98,6 +121,75 @@ class ActuatorIntegrationTests {
         mockMvc.perform(get("/actuator/info")
                         .header("Authorization", "Bearer invalid-token"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"wrong-issuer", "missing-issuer", "missing-expiration", "expired", "future-not-before"})
+    void infoRejectsSignedTokenWithInvalidIssuerOrLifetime(String scenario) throws Exception {
+        String validToken = bearerToken(UserRole.ADMIN).substring("Bearer ".length());
+        JwtClaimsSet claims = JwtClaimsSet.builder().claims(values -> {
+            values.putAll(jwtDecoder.decode(validToken).getClaims());
+            switch (scenario) {
+                case "wrong-issuer" -> values.put("iss", "another-application");
+                case "missing-issuer" -> values.remove("iss");
+                case "missing-expiration" -> values.remove("exp");
+                case "expired" -> {
+                    values.put("iat", Instant.now().minusSeconds(3600));
+                    values.put("exp", Instant.now().minusSeconds(120));
+                }
+                case "future-not-before" -> values.put("nbf", Instant.now().plusSeconds(120));
+                default -> throw new IllegalArgumentException("Unknown test scenario");
+            }
+        }).build();
+        String token = jwtEncoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
+
+        mockMvc.perform(get("/actuator/info").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value(
+                        "Authentication is required or the access token is invalid"));
+    }
+
+    @Test
+    void infoStillRejectsTokenSignedWithAnotherSecret() throws Exception {
+        String validToken = bearerToken(UserRole.ADMIN).substring("Bearer ".length());
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .claims(values -> values.putAll(jwtDecoder.decode(validToken).getClaims())).build();
+        JwtEncoder otherEncoder = new SecurityConfig().jwtEncoder("a-different-test-signing-secret-at-least-32-bytes");
+        String token = otherEncoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
+
+        mockMvc.perform(get("/actuator/info").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void nativeTomcatRecognizesHttpsFromTrustedProxy() throws Exception {
+        // Use the real server: MockMvc does not execute Tomcat's RemoteIpValve.
+        // Loopback is a trusted internal proxy in Tomcat's default configuration.
+        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            HttpResponse<String> response = client.send(HttpRequest.newBuilder(
+                            URI.create("http://127.0.0.1:" + port + "/actuator/health"))
+                            .timeout(Duration.ofSeconds(10))
+                            .header("X-Forwarded-Proto", "https").GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).isEqualTo("{\"status\":\"UP\"}");
+            assertThat(response.headers().firstValue("Strict-Transport-Security")).isPresent();
+        }
+    }
+
+    @Test
+    void internalHttpHealthCheckDoesNotRedirect() throws Exception {
+        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            HttpResponse<String> response = client.send(HttpRequest.newBuilder(
+                            URI.create("http://127.0.0.1:" + port + "/actuator/health"))
+                            .timeout(Duration.ofSeconds(10)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.headers().firstValue("Location")).isEmpty();
+            assertThat(response.headers().firstValue("Strict-Transport-Security")).isEmpty();
+        }
     }
 
     @ParameterizedTest
